@@ -192,6 +192,7 @@ export default function App(){
   const [editing,setEditing] = useState(null);
   const [form,setForm] = useState({date:"",course:"",tee:"レギュラー",holes:initHoles()});
   const [session,setSession] = useState(null);
+  const [sideTab,setSideTab] = useState("OUT");
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -231,7 +232,7 @@ export default function App(){
 
   function startNew(){
     setForm({date:new Date().toISOString().slice(0,10),course:"",tee:"レギュラー",holes:initHoles()});
-    setEditing("new"); setTab("entry");
+    setEditing("new"); setTab("entry"); setSideTab("OUT");
   }
   async function saveRound(){
     const { data: { user } } = await supabase.auth.getUser();
@@ -243,7 +244,7 @@ export default function App(){
   function editRound(r){
     const holes = r.holes.map(h=>({...h,yardage:h.yardage||"",memo:h.memo||"",approaches:h.approaches||0,
       shots:(h.shots||[defaultShot(true)]).map(s=>({lie:"",...s}))}));
-    setForm({...r,holes}); setEditing(r.id); setTab("entry");
+    setForm({...r,holes}); setEditing(r.id); setTab("entry"); setSideTab("OUT");
   }
   async function deleteRound(id){ 
     if(confirm("削除しますか？")){
@@ -381,14 +382,22 @@ export default function App(){
           </div>
           <div style={{marginBottom:18}}><label style={S.label}>コース名</label><input style={S.inp} value={form.course} onChange={e=>setForm(f=>({...f,course:e.target.value}))} placeholder="例：烏山城カントリークラブ"/></div>
 
+          <div style={{display:"flex",borderBottom:"1px solid #eee",marginBottom:14,marginLeft:-16,marginRight:-16,paddingLeft:16}}>
+            {["OUT","IN"].map((side,si) => (
+              <button key={side} onClick={()=>setSideTab(side)} style={{padding:"10px 24px",border:"none",background:"none",fontSize:14,fontWeight:sideTab===side?700:400,color:sideTab===side?"#111":"#999",borderBottom:sideTab===side?`2px solid ${MINT}`:"2px solid transparent",cursor:"pointer"}}>
+                {side} <span style={{fontSize:11,color:"#bbb",marginLeft:4}}>{si===0?"1〜9":"10〜18"}H</span>
+              </button>
+            ))}
+          </div>
+
           {["OUT","IN"].map((side,si) => {
+            if(sideTab!==side) return null;
             const sh = form.holes.slice(si*9, si*9+9);
             const sScore = sh.reduce((a,h)=>a+(parseInt(h.score)||0),0);
             const sPutts = sh.reduce((a,h)=>a+(parseInt(h.putts)||0),0);
             const sPar   = sh.reduce((a,h)=>a+h.par,0);
             return (
               <div key={side}>
-                <div style={{fontSize:12,fontWeight:600,color:"#999",marginBottom:8,letterSpacing:"0.5px"}}>{side} — {si===0?"1〜9":"10〜18"}H</div>
                 {sh.map((h,idx) => {
                   const i = si*9+idx;
                   const lbl = scoreLabel(parseInt(h.score), h.par);
@@ -490,12 +499,18 @@ export default function App(){
                     </div>
                   );
                 })}
-                <div style={{...S.subtotal,marginBottom:16}}>
+                <div style={{...S.subtotal,marginBottom:8}}>
                   <span style={{color:"#888",fontSize:12}}>{side} 小計</span>
                   <div style={{display:"flex",gap:12,alignItems:"baseline"}}>
                     <span style={{fontSize:18,fontWeight:700}}>{sScore||"—"}<span style={{fontSize:11,color:"#bbb",marginLeft:3}}>({sPar})</span></span>
                     <span style={{fontSize:12,color:"#888"}}>パット {sPutts||"—"}</span>
                   </div>
+                </div>
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  {si===0
+                    ? <button onClick={()=>setSideTab("IN")} style={{...S.btn(MINT,"#fff"),flex:1,fontSize:13}}>IN（10〜18H）へ →</button>
+                    : <button onClick={()=>setSideTab("OUT")} style={{...S.outlineBtn,flex:1,fontSize:13}}>← OUT（1〜9H）に戻る</button>
+                  }
                 </div>
               </div>
             );
