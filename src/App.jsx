@@ -193,6 +193,7 @@ export default function App(){
   const [form,setForm] = useState({date:"",course:"",tee:"レギュラー",holes:initHoles()});
   const [session,setSession] = useState(null);
   const [sideTab,setSideTab] = useState("OUT");
+  const [viewing,setViewing] = useState(null);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -359,6 +360,114 @@ export default function App(){
             </svg>
             Googleでログイン
           </button>
+        </div>
+      </div>
+    );
+  }
+  if(viewing){
+    const r = viewing;
+    const lbl = scoreLabel(totalScore(r.holes), totalPar(r.holes));
+    const [detailSide, setDetailSide] = [sideTab, setSideTab];
+    return (
+      <div style={S.wrap}>
+        <div style={S.header}>
+          <button onClick={()=>setViewing(null)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#333",padding:0,lineHeight:1}}>‹</button>
+          <span style={S.headerTitle}>{r.course||"コース未記入"}</span>
+          <button onClick={()=>{setViewing(null);editRound(r);}} style={S.btn(MINT,"#fff")}>編集</button>
+        </div>
+        <div style={{padding:"14px 16px 40px"}}>
+          <div style={{...S.card,background:"#111",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:12,color:"#888",marginBottom:4}}>{r.date} · {r.tee}ティー</div>
+                <div style={{display:"flex",gap:8,marginTop:6}}>
+                  {[["FW",pct(r.holes.filter(h=>h.fairway===true&&h.par!==3).length,r.holes.filter(h=>h.par!==3).length)],["GIR",pct(r.holes.filter(h=>h.gir).length,18)],["パット",totalPutts(r.holes)||"—"]].map(([k,v])=>(
+                    <span key={k} style={{fontSize:11,color:"#666",background:"#222",borderRadius:6,padding:"3px 8px"}}>{k} {v}</span>
+                  ))}
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                  <span style={{fontSize:36,fontWeight:700,color:"#fff",lineHeight:1}}>{totalScore(r.holes)||"—"}</span>
+                  {lbl ? <span style={{fontSize:18,fontWeight:700,color:lbl.color}}>{lbl.txt}</span> : null}
+                </div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>par {totalPar(r.holes)}</div>
+              </div>
+            </div>
+          </div>
+
+          <RoundHeatmap holes={r.holes}/>
+
+          <div style={{display:"flex",borderBottom:"1px solid #eee",margin:"14px -16px 14px",paddingLeft:16}}>
+            {["OUT","IN"].map((side,si)=>(
+              <button key={side} onClick={()=>setDetailSide(side)} style={{padding:"10px 24px",border:"none",background:"none",fontSize:14,fontWeight:detailSide===side?700:400,color:detailSide===side?"#111":"#999",borderBottom:detailSide===side?`2px solid ${MINT}`:"2px solid transparent",cursor:"pointer"}}>
+                {side} <span style={{fontSize:11,color:"#bbb",marginLeft:4}}>{si===0?"1〜9":"10〜18"}H</span>
+              </button>
+            ))}
+          </div>
+
+          {["OUT","IN"].map((side,si)=>{
+            if(detailSide!==side) return null;
+            const sh = r.holes.slice(si*9, si*9+9);
+            const sScore = sh.reduce((a,h)=>a+(parseInt(h.score)||0),0);
+            const sPutts = sh.reduce((a,h)=>a+(parseInt(h.putts)||0),0);
+            const sPar   = sh.reduce((a,h)=>a+h.par,0);
+            return (
+              <div key={side}>
+                {sh.map((h,idx)=>{
+                  const i = si*9+idx;
+                  const lh = scoreLabel(parseInt(h.score), h.par);
+                  return (
+                    <div key={i} style={{...S.card,marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{fontSize:18,fontWeight:700,color:MINT,minWidth:24}}>{h.no}</span>
+                          <span style={{fontSize:12,color:"#aaa"}}>Par {h.par}{h.yardage ? ` · ${h.yardage}y` : ""}</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          {h.fairway===true && <span style={{fontSize:10,background:MINT_LIGHT,color:MINT,borderRadius:4,padding:"2px 6px",fontWeight:600}}>FW</span>}
+                          {h.gir && <span style={{fontSize:10,background:BLUE_LIGHT,color:BLUE,borderRadius:4,padding:"2px 6px",fontWeight:600}}>GIR</span>}
+                          <div style={{textAlign:"right"}}>
+                            <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+                              <span style={{fontSize:22,fontWeight:700,color:"#111",lineHeight:1}}>{h.score||"—"}</span>
+                              {lh ? <span style={{fontSize:13,fontWeight:700,color:lh.color}}>{lh.txt}</span> : null}
+                            </div>
+                            <div style={{fontSize:11,color:"#aaa"}}>パット {h.putts||"—"}</div>
+                          </div>
+                        </div>
+                      </div>
+                      {(h.shots||[]).filter(s=>s.club).map((s,si2)=>{
+                        const carry = calcCarry(h, (h.shots||[]).indexOf(s));
+                        const isPutt = s.club==="PT";
+                        return (
+                          <div key={si2} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:"1px solid #f5f5f5"}}>
+                            <span style={{fontSize:12,fontWeight:600,color:"#555",minWidth:28}}>{s.club}</span>
+                            {carry!=null && !isPutt && <span style={{fontSize:11,color:BLUE}}>{carry}y</span>}
+                            {s.miss&&s.miss!=="なし" && <span style={S.pill("#9a6200","#fff8e1")}>{s.miss}</span>}
+                            {(s.troubles||[]).map(t=><span key={t} style={S.pill("#c0392b","#fdecea")}>{t}</span>)}
+                          </div>
+                        );
+                      })}
+                      {h.memo ? <div style={{fontSize:12,color:"#888",marginTop:8,paddingTop:8,borderTop:"1px solid #f5f5f5"}}>{h.memo}</div> : null}
+                    </div>
+                  );
+                })}
+                <div style={{...S.subtotal,marginBottom:8}}>
+                  <span style={{color:"#888",fontSize:12}}>{side} 小計</span>
+                  <div style={{display:"flex",gap:12,alignItems:"baseline"}}>
+                    <span style={{fontSize:18,fontWeight:700}}>{sScore||"—"}<span style={{fontSize:11,color:"#bbb",marginLeft:3}}>({sPar})</span></span>
+                    <span style={{fontSize:12,color:"#888"}}>パット {sPutts||"—"}</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,marginBottom:8}}>
+                  {si===0
+                    ? <button onClick={()=>setDetailSide("IN")} style={{...S.btn(MINT,"#fff"),flex:1,fontSize:13}}>IN（10〜18H）へ →</button>
+                    : <button onClick={()=>setDetailSide("OUT")} style={{...S.outlineBtn,flex:1,fontSize:13}}>← OUT（1〜9H）に戻る</button>
+                  }
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -587,6 +696,7 @@ export default function App(){
                       ))}
                     </div>
                     <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{setSideTab("OUT");setViewing(r);}} style={{...S.outlineBtn,flex:1}}>詳細</button>
                       <button onClick={()=>editRound(r)} style={{...S.outlineBtn,flex:1}}>編集</button>
                       <button onClick={()=>deleteRound(r.id)} style={{...S.outlineBtn,color:"#e74c3c",borderColor:"#fde"}}>削除</button>
                     </div>
