@@ -372,7 +372,7 @@ export default function App(){
           <button onClick={saveRound} style={S.btn(MINT,"#fff")}>保存</button>
         </div>
         <div style={{padding:"14px 16px 80px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
             <div><label style={S.label}>日付</label><input type="date" style={S.inp} value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
             <div><label style={S.label}>ティー</label>
               <select style={S.inp} value={form.tee} onChange={e=>setForm(f=>({...f,tee:e.target.value}))}>
