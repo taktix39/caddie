@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from './supabase'
 
 const CLUBS = ["1W","3W","5W","4U","4I","5I","6I","7I","8I","9I","PW","AW","SW","PT"];
 const MISS_TYPES = ["なし","引っ掛け","スライス","ダフり","トップ","プッシュ"];
@@ -17,8 +18,29 @@ const defaultShot = (first=false) => ({club:"",remaining:"",lie:first?"ティー
 const defaultHole = () => ({par:4,yardage:"",score:"",putts:"",approaches:0,fairway:null,gir:false,shots:[defaultShot(true)],memo:""});
 const initHoles = () => Array.from({length:18}, (_,i) => ({...defaultHole(), no:i+1}));
 
-function loadRounds(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");}catch{return[];}}
-function saveRounds(r){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(r));}catch{}}
+async function fetchRoundsFromDB(){
+  const { data, error } = await supabase
+    .from('rounds')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if(error){ console.error(error); return []; }
+  return data || [];
+}
+
+async function upsertRound(round){
+  const { error } = await supabase
+    .from('rounds')
+    .upsert(round)
+  if(error) console.error(error);
+}
+
+async function deleteRoundFromDB(id){
+  const { error } = await supabase
+    .from('rounds')
+    .delete()
+    .eq('id', id)
+  if(error) console.error(error);
+}
 
 function calcCarry(hole, si){
   const b = parseFloat(hole.shots[si]?.remaining);
@@ -166,11 +188,46 @@ function HoleHeatmap({holeStats}){
 
 export default function App(){
   const [tab,setTab] = useState("rounds");
-  const [rounds,setRounds] = useState(loadRounds);
+  const [rounds,setRounds] = useState([]);
   const [editing,setEditing] = useState(null);
   const [form,setForm] = useState({date:"",course:"",tee:"レギュラー",holes:initHoles()});
+  const [session,setSession] = useState(null);
+  const [email,setEmail] = useState("");
+  const [emailSent,setEmailSent] = useState(false);
 
-  useEffect(()=>saveRounds(rounds),[rounds]);
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
+      setSession(session);
+      if(session) fetchRounds();
+    });
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_,session)=>{
+      setSession(session);
+      if(session) fetchRounds();
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  async function fetchRounds(){
+    const data = await fetchRoundsFromDB();
+    setRounds(data);
+  }
+
+  async function handleLogin(){
+  const {error} = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: 'http://localhost:5173'
+    }
+  });
+  if(error) alert(error.message);
+  else setEmailSent(true);
+  }
+
+  async function handleLogout(){
+    await supabase.auth.signOut();
+    setRounds([]);
+    setSession(null);
+  }
 
   const totalScore = holes => holes.reduce((s,h)=>s+(parseInt(h.score)||0),0);
   const totalPutts = holes => holes.reduce((s,h)=>s+(parseInt(h.putts)||0),0);
@@ -181,10 +238,11 @@ export default function App(){
     setForm({date:new Date().toISOString().slice(0,10),course:"",tee:"レギュラー",holes:initHoles()});
     setEditing("new"); setTab("entry");
   }
-  function saveRound(){
-    const round = {...form, id:editing==="new"?Date.now():editing};
-    if(editing==="new") setRounds(r=>[round,...r]);
-    else setRounds(r=>r.map(x=>x.id===editing?round:x));
+  async function saveRound(){
+    const { data: { user } } = await supabase.auth.getUser();
+    const round = {...form, id:editing==="new"?Date.now():editing, user_id:user.id};
+    await upsertRound(round);
+    await fetchRounds();
     setEditing(null); setTab("rounds");
   }
   function editRound(r){
@@ -192,7 +250,12 @@ export default function App(){
       shots:(h.shots||[defaultShot(true)]).map(s=>({lie:"",...s}))}));
     setForm({...r,holes}); setEditing(r.id); setTab("entry");
   }
-  function deleteRound(id){ if(confirm("削除しますか？")) setRounds(r=>r.filter(x=>x.id!==id)); }
+  async function deleteRound(id){ 
+    if(confirm("削除しますか？")){
+      await deleteRoundFromDB(id);
+      await fetchRounds();
+      }
+  }
 
   function upHole(i,key,val){ setForm(f=>{ const holes=[...f.holes]; holes[i]={...holes[i],[key]:val}; return {...f,holes}; }); }
   function upYardage(i,val){
@@ -268,6 +331,42 @@ export default function App(){
   const fwGir        = getFwGir();
   const scoreHistory = rounds.map(r=>({date:r.date,score:totalScore(r.holes),putts:totalPutts(r.holes)})).reverse();
 
+  if(!session){
+    return(
+      <div style={{...S.wrap,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"0 32px"}}>
+        <svg width="160" height="32" viewBox="0 0 160 32" style={{marginBottom:32}}>
+          <ellipse cx="16" cy="27" rx="8" ry="2" fill={MINT} opacity="0.5"/>
+          <rect x="14.5" y="21" width="3" height="5" rx="1" fill={MINT}/>
+          <path d="M13 23 Q16 25 19 23" fill={MINT}/>
+          <circle cx="16" cy="16" r="7" fill="none" stroke={MINT} strokeWidth="1.8"/>
+          <circle cx="16" cy="16" r="6" fill="white"/>
+          <circle cx="13" cy="13" r="1" fill="#ddd"/>
+          <circle cx="16" cy="12" r="1" fill="#ddd"/>
+          <circle cx="19" cy="13" r="1" fill="#ddd"/>
+          <circle cx="12" cy="16" r="1" fill="#ddd"/>
+          <circle cx="15" cy="15" r="1" fill="#ddd"/>
+          <circle cx="18" cy="15" r="1" fill="#ddd"/>
+          <text x="30" y="24" fontSize="22" fontWeight="700" fontFamily="-apple-system,sans-serif">
+            <tspan fill={MINT}>C</tspan><tspan fill={BLUE}>addie</tspan>
+          </text>
+        </svg>
+        {emailSent ? (
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:16}}>📧</div>
+            <div style={{fontSize:16,fontWeight:600,color:"#111",marginBottom:8}}>メールを確認してください</div>
+            <div style={{fontSize:13,color:"#999"}}>届いたリンクをタップするとログインできます</div>
+          </div>
+        ) : (
+          <div style={{width:"100%"}}>
+            <div style={{fontSize:16,fontWeight:600,color:"#111",marginBottom:8,textAlign:"center"}}>ログイン</div>
+            <div style={{fontSize:13,color:"#999",marginBottom:24,textAlign:"center"}}>メールアドレスを入力してください</div>
+            <input style={{...S.inp,marginBottom:12}} type="email" placeholder="example@gmail.com" value={email} onChange={e=>setEmail(e.target.value)}/>
+            <button onClick={handleLogin} style={{...S.btn(MINT,"#fff"),width:"100%",padding:14,fontSize:15}}>ログインリンクを送る</button>
+          </div>
+        )}
+      </div>
+    );
+  }
   if(tab==="entry"){
     return (
       <div style={S.wrap}>
@@ -423,7 +522,6 @@ export default function App(){
     <div style={S.wrap}>
       <div style={S.header}>
         <svg width="160" height="32" viewBox="0 0 160 32">
-          {/* App icon - golf ball on tee */}
           <ellipse cx="16" cy="27" rx="8" ry="2" fill={MINT} opacity="0.5"/>
           <rect x="14.5" y="21" width="3" height="5" rx="1" fill={MINT}/>
           <path d="M13 23 Q16 25 19 23" fill={MINT}/>
@@ -435,13 +533,14 @@ export default function App(){
           <circle cx="12" cy="16" r="1" fill="#ddd"/>
           <circle cx="15" cy="15" r="1" fill="#ddd"/>
           <circle cx="18" cy="15" r="1" fill="#ddd"/>
-          {/* Caddie text */}
           <text x="30" y="24" fontSize="22" fontWeight="700" fontFamily="-apple-system,sans-serif">
             <tspan fill={MINT}>C</tspan><tspan fill={BLUE}>addie</tspan>
           </text>
-
         </svg>
-        <button onClick={startNew} style={S.btn(MINT,"#fff")}>＋ 新規</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={startNew} style={S.btn(MINT,"#fff")}>＋ 新規</button>
+          <button onClick={handleLogout} style={{...S.outlineBtn,fontSize:12}}>ログアウト</button>
+        </div>
       </div>
       <div style={S.tabBar}>
         {[["rounds","ラウンド"],["analysis","分析"]].map(([k,l]) => (
