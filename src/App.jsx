@@ -216,7 +216,7 @@ export default function App(){
   const {error} = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: 'http://localhost:5173'
+      emailRedirectTo: 'https://caddie-eta.vercel.app'
     }
   });
   if(error) alert(error.message);
